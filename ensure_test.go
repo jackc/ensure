@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/ensure"
+	"github.com/jackc/errortree"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,6 +18,11 @@ func TestRecord(t *testing.T) {
 		r.Ensure("age", ensure.Int64())
 	})
 	require.Error(t, errs)
+	var etErr *errortree.Node
+	require.ErrorAs(t, errs, &etErr)
+	ageErrors := etErr.Get([]any{"age"})
+	require.Len(t, ageErrors, 1)
+	assert.Equal(t, "not a valid number", ageErrors[0].Error())
 }
 
 func TestNotNil(t *testing.T) {

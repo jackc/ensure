@@ -11,102 +11,9 @@ import (
 	"unicode"
 
 	"github.com/gofrs/uuid/v5"
+	"github.com/jackc/errortree"
 	"github.com/shopspring/decimal"
 )
-
-type FieldError struct {
-	field string
-	err   error
-}
-
-func (e *FieldError) Field() string {
-	return e.field
-}
-
-func (e *FieldError) Unwrap() error {
-	return e.err
-}
-
-func (e *FieldError) Error() string {
-	return fmt.Sprintf("%s: %s", e.field, e.err)
-}
-
-type RecordErrors struct {
-	errors []*FieldError
-}
-
-// Add adds a new error to the validation errors for the given field. By convention, an empty string for field indicates
-// a record-level error.
-func (e *RecordErrors) Add(field string, err error) {
-	e.errors = append(e.errors, &FieldError{field: field, err: err})
-}
-
-// Len returns the number of errors in the ValidationErrors.
-func (e *RecordErrors) Len() int {
-	if e == nil {
-		return 0
-	}
-
-	return len(e.errors)
-}
-
-// On returns a []*ValidationError for the given field.
-func (e *RecordErrors) On(field string) []*FieldError {
-	if e == nil {
-		return nil
-	}
-
-	var errs []*FieldError
-	for _, e := range e.errors {
-		if e.field == field {
-			errs = append(errs, e)
-		}
-	}
-	return errs
-}
-
-// All returns all errors.
-func (e *RecordErrors) All() []*FieldError {
-	if e == nil {
-		return nil
-	}
-
-	return e.errors
-}
-
-// Unwrap unwraps all errors.
-func (e *RecordErrors) Unwrap() []error {
-	var errs []error
-	for _, e := range e.errors {
-		errs = append(errs, e)
-	}
-
-	return errs
-}
-
-// Error satisfies the error interface.
-func (e *RecordErrors) Error() string {
-	if len(e.errors) == 0 {
-		return "BUG: Errors.Error() called with no errors"
-	}
-
-	sb := strings.Builder{}
-	for i, e := range e.errors {
-		if i > 0 {
-			sb.WriteString(", ")
-		}
-
-		if e.field == "" {
-			sb.WriteString(e.err.Error())
-		} else {
-			sb.WriteString(e.field)
-			sb.WriteString(": ")
-			sb.WriteString(e.err.Error())
-		}
-	}
-
-	return sb.String()
-}
 
 type GetterSetter interface {
 	Get(attribute string) any
@@ -125,7 +32,7 @@ func (m GetterSetterMap) Set(key string, value any) {
 
 type RecordWithErrors struct {
 	record GetterSetter
-	errors *RecordErrors
+	errors *errortree.Node
 }
 
 func Record(record GetterSetter, fn EnsureRecordFunc) error {
@@ -135,7 +42,7 @@ func Record(record GetterSetter, fn EnsureRecordFunc) error {
 
 	fn(rwe)
 
-	if errs := rwe.Errors(); errs.Len() > 0 {
+	if errs := rwe.Errors(); errs != nil {
 		return errs
 	}
 
@@ -176,9 +83,9 @@ type EnsureRecordFunc func(*RecordWithErrors)
 
 func (r *RecordWithErrors) Add(field string, err error) {
 	if r.errors == nil {
-		r.errors = &RecordErrors{}
+		r.errors = &errortree.Node{}
 	}
-	r.errors.Add(field, err)
+	r.errors.Add([]any{field}, err)
 }
 
 func (r *RecordWithErrors) Get(field string) any {
@@ -202,7 +109,7 @@ func (r *RecordWithErrors) Ensure(field string, ensurers ...Ensurer) {
 	r.record.Set(field, value)
 }
 
-func (r *RecordWithErrors) Errors() *RecordErrors {
+func (r *RecordWithErrors) Errors() *errortree.Node {
 	return r.errors
 }
 
